@@ -3,13 +3,13 @@
 - Version: 1.0-draft
 - Project: `melotts-speech-service`
 - Target: Linux amd64, Docker Compose, 8 vCPU / 8 GiB host (service limits: 6 CPU / 6 GiB)
-- Tech: Python 3.10, FastAPI, MeloTTS, PyTorch CPU, FFmpeg
+- Tech: Python 3.12, FastAPI, MeloTTS, PyTorch CPU, FFmpeg
 - Distribution: GHCR (`ghcr.io/<owner>/melotts-speech-service`)
 - Status: Implementation contract; **not yet an implemented/runnable service**
 
 ## 1. Objective
 
-Build a self-hosted, CPU-only TTS server that is compatible with the OpenAI speech-generation API and can be called by AstrBot / OpenAI SDK. It must synthesize natural Mandarin with occasional English terms, offer full English output, run under Docker, and publish verified images using only the `latest` tag while recording immutable digests.
+Build a self-hosted, CPU-only TTS server that is compatible with the OpenAI speech-generation API and can be called by AstrBot / OpenAI SDK. It must synthesize natural Mandarin with occasional English terms, offer full English output, run under Docker, and publish images using only the `latest` tag while recording immutable digests. Tests run during development, not during image publication.
 
 Principles: Chinese-first, small surface, one process, bounded concurrency, reproducible build, privacy by default, no proprietary cloud dependency during inference. The image is deployable with outbound access on the first startup; downloaded models must be cached on a named Docker volume. Do **not** claim offline startup until offline/bundled-model mode is explicitly implemented and verified.
 
@@ -25,7 +25,7 @@ Principles: Chinese-first, small surface, one process, bounded concurrency, repr
 - Optional Bearer API key; when `API_KEY` is non-empty, all `/v1/*` endpoints are protected. Do not log secrets or full text.
 - Single Uvicorn worker, in-memory model registry, bounded requests; no Redis, database, UI, GPU, SaaS, voice cloning or training.
 - Docker Compose example; non-root runtime user; model cache persisted in `/data/hf`; latest-only images on GHCR with recorded digests.
-- PR lint/unit tests; main-push/manual release checks real Chinese, mixed and English speech **before pushing** release image.
+- PR/main development lint/unit tests; manual real Chinese, mixed and English checks during development. Main-push/manual publication builds and pushes without repeating tests.
 
 ### Explicit non-goals
 
@@ -37,8 +37,8 @@ Principles: Chinese-first, small surface, one process, bounded concurrency, repr
 - Upstream: `https://github.com/myshell-ai/MeloTTS` (MIT); pin upstream commit SHA, never pull unpinned `main` during release.
 - Official upstream `melo/init_downloads.py` initializes **six language models**, so **do not** run this wholesale; load/download only ZH and EN.
 - Chinese TTS path uses `ZH_MIX_EN`, and lazily resolves `bert-base-multilingual-uncased` text features; English uses `bert-base-uncased`. Both the TTS checkpoint and BERT/tokenizer assets must be counted in cache, memory, and warm-up checks.
-- Pin Python 3.10, CPU-only matching PyTorch/torchaudio wheels, Transformers and HuggingFace Hub versions in a lock file. Start by reproducing the upstream tested dependency set, then validate any upgrades in CI. Avoid unqualified latest PyTorch: `torch.load` behavior and ABI compatibility can change. Use SHA256 manifests for downloaded checkpoints, pin HF model revisions where possible; do not load untrusted `.pth` files.
-- Production Dockerfile should use `python:3.10-slim-bookworm` (ideally pinned digest), install FFmpeg, libsndfile1 and only necessary build dependencies; keep runtime image lean, remove APT index, execute as unprivileged UID 10001.
+- Pin Python 3.12, CPU-only matching PyTorch/torchaudio wheels, Transformers and HuggingFace Hub versions in a lock file. Use frontend versions with Python 3.12 wheels, and validate upgrades during development. Avoid unqualified latest PyTorch: `torch.load` behavior and ABI compatibility can change. Use SHA256 manifests for downloaded checkpoints, pin HF model revisions where possible; do not load untrusted `.pth` files.
+- Production Dockerfile should use `python:3.12-slim-bookworm` (ideally pinned digest), install FFmpeg, libsndfile1 and only necessary build dependencies; keep runtime image lean, remove APT index, execute as unprivileged UID 10001.
 - Runtime model cache `/data/hf`, `HF_HOME=/data/hf`, `XDG_CACHE_HOME=/data/cache`, `HOME=/data`. On startup preload the Chinese model and run **a short actual inference** so `/health/ready` means usable output, not only checkpoint presence. English may lazy-load under the same mutex; its first request is allowed to be slower.
 - If cached assets are missing and download fails, readiness remains 503; expose actionable error logs without secrets. Startup requires outbound download access unless assets were pre-seeded in the volume.
 
@@ -136,11 +136,11 @@ The included archive intentionally contains the SPEC, CI/CD scripts and deployme
 ## 8. Tests, CI and release
 
 - Unit tests do not fetch ML model files. Mock `TTS` and audio encoder. Test 401/400/429/503, valid WAV/MP3 MIME, alias mapping, SDK request shape, input length, wrong voice, blank content, secret omission, concurrent requests.
-- End-to-end CI (release workflow) builds exact Dockerfile into local image, launches with 6 CPU / 6 GiB, waits readiness, uses real Chinese and mixed Mandarin/English text, generates WAV and MP3, also synthesizes standalone English, verifies nonempty decodable WAV and MP3 header. **No publishing when a smoke test fails.**
+- Manual end-to-end development checks build the exact Dockerfile into a local image, launch with 6 CPU / 6 GiB, wait for readiness, synthesize real Chinese, mixed Mandarin/English and standalone English text, and validate decoded WAV/MP3. These checks are not repeated in the publish workflow.
 - `.github/workflows/ci.yml`: PR and main push + reusable workflow; `ruff check`, `pytest -q tests/unit`.
-- `.github/workflows/publish.yml`: release on pushes to `main` or manual run. Calls CI, builds and tests actual image, then logs into GHCR with `GITHUB_TOKEN` (`packages: write`) and publishes. Uses GitHub Docker official actions, Buildx cache, provenance and SBOM. Outputs immutable image digest.
-- Publish only `latest` on every successful run, updating the existing tag. No SemVer or SHA image tags and no Git version tag requirement. Record the source commit and immutable digest for provenance and rollback.
-- First GitHub Packages image may be private; to allow anonymous `docker pull`, explicitly change GHCR package visibility to Public after first publication. No PAT is needed to push from same GitHub repository via workflow token.
+- `.github/workflows/publish.yml`: publish on pushes to `main` or manual run. Log into GHCR with the configured `MY_TOKEN` secret, then build and push directly. Do not call the CI workflow or run unit/inference tests during publishing. Use official Docker actions, Buildx cache, provenance and SBOM. Output the immutable image digest.
+- Publish only `latest` on every successful build, updating the existing tag. No SemVer or SHA image tags and no Git version tag requirement. Record the source commit and immutable digest for provenance and rollback.
+- First GitHub Packages image may be private; to allow anonymous `docker pull`, explicitly change GHCR package visibility to Public after first publication. Configure the workflow's existing `MY_TOKEN` secret with package publication permission.
 - Deployment example uses `.env` for selected `TTS_IMAGE` and `API_KEY`; `latest` follows successful publishes and `@sha256:<digest>` selects a specific verified build.
 
 ## 9. Definition of Done
@@ -151,7 +151,7 @@ The included archive intentionally contains the SPEC, CI/CD scripts and deployme
 4. Chinese standard phrase, Chinese + `Docker/Python/OpenAI API`, and full-English phrase pass real synthesis test.
 5. On 8 CPU/8 GiB host, service stays within `cpus: 6.0` and `mem_limit: 6g`, no OOM during a 100-request sequential soak test, and bounded overload returns 429.
 6. Record p50/p95 synthesis latency and RTF for short (30 chars), medium (150 chars), and mixed-text cases; **do not claim a measured target until actual hardware benchmark**. Suggested acceptance: RTF < 1 under warm, single-request conditions; document if not met.
-7. PR with failed tests cannot publish. Publish workflow must stop on Docker build, readiness or audio validation failure; successful workflow updates the GHCR `latest` image and records its SHA256 digest.
+7. Development CI runs lint and unit tests. The independent publish workflow does not repeat tests; it stops on Docker build/publication failure and otherwise updates the GHCR `latest` image and records its SHA256 digest.
 8. Logs omit API keys/text content; image runs non-root, has read-only root filesystem, and model downloads persist across container restart.
 9. README documents install, API example, AstrBot base_url, network configuration, first-run download and upgrade/rollback commands.
 

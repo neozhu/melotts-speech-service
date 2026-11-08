@@ -187,9 +187,10 @@ period is five minutes, after which Docker can terminate the process.
 ## Pinned dependencies
 
 `requirements.lock` pins all production Python dependencies with SHA256 hashes
-for Python 3.10 / Linux x86-64, including matching PyTorch/torchaudio 2.6.0 CPU
-wheels and Transformers 4.27.4. The base image is pinned by digest. Debian system
-packages are resolved at build time.
+for Python 3.12 / Linux x86-64, including matching PyTorch/torchaudio 2.6.0 CPU
+wheels, Transformers 4.38.2, tokenizers 0.15.2 and fugashi 1.3.3. These frontend
+versions provide Python 3.12 wheels while retaining the upstream BERT API.
+The base image is pinned by digest. Debian system packages are resolved at build time.
 
 Official MeloTTS source commit: `209145371cff8fc3bd60d7be902ea69cbdb7965a`.
 `scripts/install_melo.py` verifies its archive, copies the official package,
@@ -210,7 +211,7 @@ After intentionally changing pins, regenerate with:
 
 ```bash
 python -m pip install uv==0.8.22
-uv pip compile requirements.in --python-version 3.10 \
+uv pip compile requirements.in --python-version 3.12 \
   --python-platform x86_64-unknown-linux-gnu --generate-hashes -o requirements.lock
 ```
 
@@ -219,7 +220,7 @@ uv pip compile requirements.in --python-version 3.10 \
 Unit tests use mocked engines and require no model downloads:
 
 ```bash
-python3.10 -m venv .venv
+python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements-ci.txt
 ruff check app scripts tests
@@ -243,25 +244,26 @@ Latency/RTF p50/p95 are recorded for 30-code-point, 150-code-point and mixed cas
 On hosts with fewer than six logical CPUs the smoke CPU cap is reduced. Use an
 8-vCPU / 8-GiB-available Linux host for target-hardware validation.
 
-PR/main CI runs lint and unit tests. Pushes to `main` and manual publish runs
-first require CI, build an OCI archive with provenance/SBOM, load that artifact
-into Docker and run real tests. Only successful verification allows GHCR login
-and publication of the same archive, preserving and checking its digest. There
-is no rebuild after testing. Build/startup/inference/decoding/health failures block
-publication. Set repository variable `TTS_RELEASE_RUNNER` to use a larger or
-self-hosted Linux runner; default: `ubuntu-24.04`.
+PR/main CI runs lint and unit tests during development. Publishing runs independently:
+pushes to `main` and manual publish runs build and push the CPU image directly,
+without rerunning unit tests, starting a container or synthesizing test audio.
+Run the real verification script manually during development when needed.
+Buildx cache, provenance and SBOM remain enabled. Set repository variable
+`TTS_RELEASE_RUNNER` to use a larger or self-hosted Linux build runner;
+default: `ubuntu-24.04`.
 
 Every successful publish updates only `ghcr.io/<owner>/<repository>:latest`.
 No Git version tag is needed, and no SemVer or SHA image tags are generated.
-The workflow summary and evidence artifact still record the immutable digest
-and source commit so a specific verified build can be deployed or rolled back.
+The workflow summary records the immutable digest, and the image revision label
+records the source commit so a specific build can be deployed or rolled back.
 
 Enable Actions with package write permission, then push to `main` or manually
-dispatch the publish workflow. `GITHUB_TOKEN` suffices; no PAT is needed.
+dispatch the publish workflow. Configure the existing `MY_TOKEN` repository
+secret with permission to publish the GHCR package.
 After the first successful publish, change GHCR package visibility to Public for
 anonymous pulls. The image/digest is available only after a successful publish.
 
-For deploy/rollback, set `TTS_IMAGE` in `.env` to a verified `@sha256:<digest>`
+For deploy/rollback, set `TTS_IMAGE` in `.env` to the published `@sha256:<digest>`
 reference, then run from `deploy/`:
 
 ```bash
@@ -270,6 +272,6 @@ docker compose up -d --no-build speech
 curl --fail http://127.0.0.1:8000/health/ready
 ```
 
-Use the previous verified digest to roll back. Keep volumes across upgrades;
+Use the previous published digest to roll back. Keep volumes across upgrades;
 new pinned model revisions use additional disk. Do not substitute untrusted
 checkpoint files.

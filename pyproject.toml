@@ -5,7 +5,7 @@ asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 100
 exclude = [".cache", ".venv"]
 

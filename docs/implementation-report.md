@@ -11,18 +11,19 @@ done remains **unverified** until a Linux Docker run and GHCR release succeed.
   immutable frontend/acoustic revisions and verified checkpoint/config hashes.
 - Reusable models, serialized native work, one active plus at most four waiting
   requests, queued deadlines, cancellation accounting and actual WAV startup warm-up.
-- Pinned Python 3.10/Linux production lock (114 packages, hashed CPU wheels),
+- Pinned Python 3.12/Linux production lock with hashed CPU wheels,
   source/base-image pins, non-root multi-stage image, persistent caches, read-only
   Compose deployment and configuration examples.
-- PR/main/reusable CI and gated OCI release workflow with real decoding tests,
-  overload, 100-request soak, cache restart, latency/RTF report, provenance/SBOM,
-  latest-only image tagging and publication digest verification.
+- PR/main development CI and a build-and-push release workflow with provenance/SBOM,
+  latest-only image tagging and recorded image digest. Publishing does not rerun
+  tests. Manual real-inference scripts cover decoding, overload, a 100-request
+  soak, cache restart and latency/RTF reporting during development.
 - README covering local build, SDK/AstrBot use, networking, configuration,
   first-run downloads, upgrades and rollback.
 
 ## Executed verification
 
-Environment: Windows x86-64. Application unit suite executed with CPython 3.10.18.
+Environment: Windows x86-64. Application unit suite executed with CPython 3.12.16.
 
 | Check | Result |
 | --- | --- |
@@ -32,8 +33,9 @@ Environment: Windows x86-64. Application unit suite executed with CPython 3.10.1
 | `bash -n scripts/smoke.sh` (Git Bash) | Passed |
 | actionlint 1.7.7 against both workflows | Passed |
 | YAML parsing of workflows/Compose | Passed |
-| Linux CPython 3.10 dependency resolution and hash lock generation | Passed; no CUDA packages |
-| Verified upstream archive preparation / revision injection / dictionary cache | Passed on Python 3.10 |
+| Linux CPython 3.12 dependency resolution and hash lock generation | Passed; no CUDA packages |
+| Verified upstream archive preparation / revision injection / dictionary cache | Passed on Python 3.12 |
+| Python 3.12 frontend imports, local BERT tokenization and mel-filter generation | Passed |
 | `git diff --check` | Passed |
 
 Unit tests mock model inference and subprocess encoding. They exercise auth,
@@ -53,34 +55,36 @@ Compose startup, real MeloTTS inference, audio decoding from real inference,
 Linux memory/latency benchmark, 100-request real soak, cache restart or GHCR
 publication has been performed here. No speed, RTF or memory-fit target is claimed.
 
-The release workflow is implemented and statically validated, but has not been
-executed against GitHub or GHCR in this session. OCI import and publication with
-preserved attestations/digests require that run for end-to-end verification.
+The simplified release workflow is statically validated but has not been executed
+in this session. It builds and publishes directly without running unit or real
+inference tests; manual development verification is separate from publication.
 
 ## Image tags and digest
 
 **Published images: none from this session. Immutable digest: unavailable.**
 
 Pushes to `main` and manual dispatch both publish only
-`ghcr.io/neozhu/melotts-speech-service:latest`, updating it after verification.
-No version tag is required. A successful workflow emits the immutable digest and uploads
-`cpu-inference-results-<commit>` containing test results, logs and publication refs.
+`ghcr.io/neozhu/melotts-speech-service:latest`, updating it after a successful build.
+No version tag is required. A successful workflow records the immutable digest
+in the job summary; publication does not produce inference-test artifacts.
 
 ## Manual actions and limitations
 
 1. On Linux, configure `deploy/.env`, build/start with Compose, and run
    `bash scripts/smoke.sh melotts-speech-service:local smoke-results`.
 2. Validate 6-GiB memory fit and latency/RTF on an 8-vCPU host with 8 GiB available.
-   Hosted runner performance is not evidence for that hardware profile. Set
-   repository variable `TTS_RELEASE_RUNNER` for an appropriate Linux runner.
-3. Enable Actions/package write permissions. Push to `main` or manually dispatch the
-   workflow. A successful publish is still required to satisfy release completion.
+   Hosted runner performance is not evidence for that hardware profile.
+   The manual smoke script records the hardware and resource limits used.
+3. Configure the `MY_TOKEN` GHCR secret and enable Actions/package write permissions.
+   Push to `main` or manually dispatch the workflow. A successful publish is still
+   required to satisfy release completion.
 4. Make the first GHCR package public if anonymous pulls are desired; deploy the
-   verified digest from the workflow summary. Keep prior digests for rollback.
+   published digest from the workflow summary. Keep prior digests for rollback.
 
 First startup requires network access. Offline startup is not a verified mode.
-The older upstream frontend dependency set and PyTorch checkpoint compatibility
-must pass real-image tests. Eager unused-language tokenizer imports add downloads.
+Real-image compatibility is checked manually during development rather than in
+the publish workflow. Transformers/tokenizers/fugashi were updated for Python 3.12 wheels;
+eager unused-language tokenizer imports add downloads.
 Native inference cannot be forcibly cancelled; client timeout retains its occupied
 slot until completion. Debian system packages and NLTK dictionary downloads are
 resolved at build time despite pinned Python/source/model versions. The `latest`
