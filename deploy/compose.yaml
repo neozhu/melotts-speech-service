@@ -1,0 +1,45 @@
+name: melotts
+services:
+  speech:
+    image: ${TTS_IMAGE:?Set TTS_IMAGE to a built image or verified GHCR digest}
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 6.0
+    mem_limit: 6g
+    pids_limit: 256
+    stop_grace_period: 5m
+    ports:
+      - "127.0.0.1:${TTS_PORT:-8000}:8000"
+    environment:
+      API_KEY: ${API_KEY:?Set a nonempty API_KEY}
+      HOST: 0.0.0.0
+      PORT: "8000"
+      TTS_LANGUAGES: ${TTS_LANGUAGES:-ZH,EN}
+      TTS_PRELOAD_LANGUAGES: ${TTS_PRELOAD_LANGUAGES:-ZH}
+      TTS_DEFAULT_VOICE: ${TTS_DEFAULT_VOICE:-zh}
+      TTS_MAX_TEXT_LENGTH: ${TTS_MAX_TEXT_LENGTH:-500}
+      TTS_MAX_CONCURRENCY: "1"
+      TTS_MAX_QUEUE: ${TTS_MAX_QUEUE:-4}
+      TTS_QUEUE_TIMEOUT_SECONDS: ${TTS_QUEUE_TIMEOUT_SECONDS:-120}
+      TTS_ENCODE_TIMEOUT_SECONDS: ${TTS_ENCODE_TIMEOUT_SECONDS:-30}
+      TTS_CPU_THREADS: "4"
+      TTS_INTEROP_THREADS: "1"
+      HF_HOME: /data/hf
+      XDG_CACHE_HOME: /data/cache
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - models:/data/hf
+      - cache:/data/cache
+    tmpfs:
+      - /tmp:size=512m,mode=1777,noexec,nosuid
+volumes:
+  models:
+  cache:
