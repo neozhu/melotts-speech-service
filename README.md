@@ -243,7 +243,7 @@ Latency/RTF p50/p95 are recorded for 30-code-point, 150-code-point and mixed cas
 On hosts with fewer than six logical CPUs the smoke CPU cap is reduced. Use an
 8-vCPU / 8-GiB-available Linux host for target-hardware validation.
 
-PR/main CI runs lint and unit tests. Stable tags such as `v1.2.3` and manual runs
+PR/main CI runs lint and unit tests. Pushes to `main` and manual publish runs
 first require CI, build an OCI archive with provenance/SBOM, load that artifact
 into Docker and run real tests. Only successful verification allows GHCR login
 and publication of the same archive, preserving and checking its digest. There
@@ -251,17 +251,15 @@ is no rebuild after testing. Build/startup/inference/decoding/health failures bl
 publication. Set repository variable `TTS_RELEASE_RUNNER` to use a larger or
 self-hosted Linux runner; default: `ubuntu-24.04`.
 
-For `v1.2.3`, tags are `1.2.3`, `1.2`, `latest` and `sha-<full-commit>` under
-`ghcr.io/<owner>/<repository>`. Manual dispatch publishes only the SHA tag.
-Only stable release SemVer is supported. Existing exact version/SHA tags are
-rejected; minor/latest are moving aliases. Protect Git release tags and serialize
-external publishers: a registry existence check cannot prevent an external race.
-The workflow summary and evidence artifact record the immutable digest.
+Every successful publish updates only `ghcr.io/<owner>/<repository>:latest`.
+No Git version tag is needed, and no SemVer or SHA image tags are generated.
+The workflow summary and evidence artifact still record the immutable digest
+and source commit so a specific verified build can be deployed or rolled back.
 
-Commit/push the implementation, enable Actions with package write permission,
-and push a new protected release tag. `GITHUB_TOKEN` suffices; no PAT is needed.
+Enable Actions with package write permission, then push to `main` or manually
+dispatch the publish workflow. `GITHUB_TOKEN` suffices; no PAT is needed.
 After the first successful publish, change GHCR package visibility to Public for
-anonymous pulls. No actual image tags/digests exist until a successful release.
+anonymous pulls. The image/digest is available only after a successful publish.
 
 For deploy/rollback, set `TTS_IMAGE` in `.env` to a verified `@sha256:<digest>`
 reference, then run from `deploy/`:

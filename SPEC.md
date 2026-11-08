@@ -9,7 +9,7 @@
 
 ## 1. Objective
 
-Build a self-hosted, CPU-only TTS server that is compatible with the OpenAI speech-generation API and can be called by AstrBot / OpenAI SDK. It must synthesize natural Mandarin with occasional English terms, offer full English output, run under Docker, and publish deployable immutable images from verified Git tags.
+Build a self-hosted, CPU-only TTS server that is compatible with the OpenAI speech-generation API and can be called by AstrBot / OpenAI SDK. It must synthesize natural Mandarin with occasional English terms, offer full English output, run under Docker, and publish verified images using only the `latest` tag while recording immutable digests.
 
 Principles: Chinese-first, small surface, one process, bounded concurrency, reproducible build, privacy by default, no proprietary cloud dependency during inference. The image is deployable with outbound access on the first startup; downloaded models must be cached on a named Docker volume. Do **not** claim offline startup until offline/bundled-model mode is explicitly implemented and verified.
 
@@ -24,8 +24,8 @@ Principles: Chinese-first, small surface, one process, bounded concurrency, repr
 - MP3 and WAV, selectable by `response_format`; non-streaming, synchronous response.
 - Optional Bearer API key; when `API_KEY` is non-empty, all `/v1/*` endpoints are protected. Do not log secrets or full text.
 - Single Uvicorn worker, in-memory model registry, bounded requests; no Redis, database, UI, GPU, SaaS, voice cloning or training.
-- Docker Compose example; non-root runtime user; model cache persisted in `/data/hf`; SHA-tagged images on GHCR.
-- PR lint/unit tests; tag/manual release checks real Chinese, mixed and English speech **before pushing** release image.
+- Docker Compose example; non-root runtime user; model cache persisted in `/data/hf`; latest-only images on GHCR with recorded digests.
+- PR lint/unit tests; main-push/manual release checks real Chinese, mixed and English speech **before pushing** release image.
 
 ### Explicit non-goals
 
@@ -138,10 +138,10 @@ The included archive intentionally contains the SPEC, CI/CD scripts and deployme
 - Unit tests do not fetch ML model files. Mock `TTS` and audio encoder. Test 401/400/429/503, valid WAV/MP3 MIME, alias mapping, SDK request shape, input length, wrong voice, blank content, secret omission, concurrent requests.
 - End-to-end CI (release workflow) builds exact Dockerfile into local image, launches with 6 CPU / 6 GiB, waits readiness, uses real Chinese and mixed Mandarin/English text, generates WAV and MP3, also synthesizes standalone English, verifies nonempty decodable WAV and MP3 header. **No publishing when a smoke test fails.**
 - `.github/workflows/ci.yml`: PR and main push + reusable workflow; `ruff check`, `pytest -q tests/unit`.
-- `.github/workflows/publish.yml`: release on `v*.*.*` tags or manual run. Calls CI, builds and tests actual image, then logs into GHCR with `GITHUB_TOKEN` (`packages: write`) and publishes. Uses GitHub Docker official actions, Buildx cache, provenance and SBOM. Outputs immutable image digest.
-- Tags for `v1.2.3`: `1.2.3`, `1.2`, possibly `latest` for stable semver; `sha-<commit>` for provenance. Manual workflow dispatch pushes only SHA tag. Never silently overwrite an existing version tag: protected tags + repository ruleset recommended.
+- `.github/workflows/publish.yml`: release on pushes to `main` or manual run. Calls CI, builds and tests actual image, then logs into GHCR with `GITHUB_TOKEN` (`packages: write`) and publishes. Uses GitHub Docker official actions, Buildx cache, provenance and SBOM. Outputs immutable image digest.
+- Publish only `latest` on every successful run, updating the existing tag. No SemVer or SHA image tags and no Git version tag requirement. Record the source commit and immutable digest for provenance and rollback.
 - First GitHub Packages image may be private; to allow anonymous `docker pull`, explicitly change GHCR package visibility to Public after first publication. No PAT is needed to push from same GitHub repository via workflow token.
-- Deployment example uses `.env` for selected `TTS_IMAGE` and `API_KEY`; prefer a fixed semver tag or `@sha256:<digest>` in production, not `latest`.
+- Deployment example uses `.env` for selected `TTS_IMAGE` and `API_KEY`; `latest` follows successful publishes and `@sha256:<digest>` selects a specific verified build.
 
 ## 9. Definition of Done
 
@@ -151,7 +151,7 @@ The included archive intentionally contains the SPEC, CI/CD scripts and deployme
 4. Chinese standard phrase, Chinese + `Docker/Python/OpenAI API`, and full-English phrase pass real synthesis test.
 5. On 8 CPU/8 GiB host, service stays within `cpus: 6.0` and `mem_limit: 6g`, no OOM during a 100-request sequential soak test, and bounded overload returns 429.
 6. Record p50/p95 synthesis latency and RTF for short (30 chars), medium (150 chars), and mixed-text cases; **do not claim a measured target until actual hardware benchmark**. Suggested acceptance: RTF < 1 under warm, single-request conditions; document if not met.
-7. PR with failed tests cannot publish. Tag workflow must stop on Docker build, readiness or audio validation failure; successful workflow produces GHCR image + SHA256 digest.
+7. PR with failed tests cannot publish. Publish workflow must stop on Docker build, readiness or audio validation failure; successful workflow updates the GHCR `latest` image and records its SHA256 digest.
 8. Logs omit API keys/text content; image runs non-root, has read-only root filesystem, and model downloads persist across container restart.
 9. README documents install, API example, AstrBot base_url, network configuration, first-run download and upgrade/rollback commands.
 

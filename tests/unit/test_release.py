@@ -1,17 +1,18 @@
 import pytest
 
-from scripts.release_metadata import release_tags
+from scripts.release_metadata import main
 
 
-def test_semver_tags():
-    assert release_tags("push", "v1.2.3", "a" * 40) == ["1.2.3", "1.2", "latest", "sha-" + "a" * 40]
-
-
-def test_manual_only_pushes_sha():
-    assert release_tags("workflow_dispatch", "main", "a" * 40) == ["sha-" + "a" * 40]
-
-
-@pytest.mark.parametrize("tag", ["v1.2", "v01.2.3", "v1.2.3-rc.1", "v1.2.3;evil", "main"])
-def test_invalid_release_tag_is_rejected(tag):
-    with pytest.raises(ValueError):
-        release_tags("push", tag, "a" * 40)
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+def test_publish_only_latest_without_version_or_sha(monkeypatch, tmp_path, event):
+    output = tmp_path / "github-output"
+    monkeypatch.setenv("GITHUB_REPOSITORY", "Owner/MeloTTS-Speech-Service")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    monkeypatch.delenv("GITHUB_REF_NAME", raising=False)
+    main()
+    assert output.read_text(encoding="utf-8") == (
+        "image=ghcr.io/owner/melotts-speech-service\n"
+        "tag=ghcr.io/owner/melotts-speech-service:latest\n"
+    )

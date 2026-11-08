@@ -16,7 +16,7 @@ done remains **unverified** until a Linux Docker run and GHCR release succeed.
   Compose deployment and configuration examples.
 - PR/main/reusable CI and gated OCI release workflow with real decoding tests,
   overload, 100-request soak, cache restart, latency/RTF report, provenance/SBOM,
-  immutable tag checks and publication digest verification.
+  latest-only image tagging and publication digest verification.
 - README covering local build, SDK/AstrBot use, networking, configuration,
   first-run downloads, upgrades and rollback.
 
@@ -27,7 +27,7 @@ Environment: Windows x86-64. Application unit suite executed with CPython 3.10.1
 | Check | Result |
 | --- | --- |
 | `ruff check app scripts tests` | Passed |
-| `pytest -q tests/unit` | 76 passed; no skips |
+| `pytest -q tests/unit` | 68 passed; no skips |
 | `python -m compileall -q app scripts tests` | Passed |
 | `bash -n scripts/smoke.sh` (Git Bash) | Passed |
 | actionlint 1.7.7 against both workflows | Passed |
@@ -39,7 +39,7 @@ Environment: Windows x86-64. Application unit suite executed with CPython 3.10.1
 Unit tests mock model inference and subprocess encoding. They exercise auth,
 validation, MIME/envelopes, aliases, SDK request compatibility, startup readiness,
 responsive health during model work, queue saturation/expiry/cancellation,
-recovery, checkpoint verification, safe registry checks and configuration privacy.
+recovery, checkpoint verification, latest-only metadata and configuration privacy.
 These results do not establish real synthesis or a successful container build.
 
 The independent code review found a configuration-validation secret exposure.
@@ -61,15 +61,9 @@ preserved attestations/digests require that run for end-to-end verification.
 
 **Published images: none from this session. Immutable digest: unavailable.**
 
-For a future `v1.2.3` release in this repository, the workflow generates:
-
-- `ghcr.io/neozhu/melotts-speech-service:1.2.3`
-- `ghcr.io/neozhu/melotts-speech-service:1.2`
-- `ghcr.io/neozhu/melotts-speech-service:latest`
-- `ghcr.io/neozhu/melotts-speech-service:sha-<full-commit>`
-
-These are examples, not existing published tags. Manual dispatch generates only
-the SHA tag. A successful workflow emits the actual immutable digest and uploads
+Pushes to `main` and manual dispatch both publish only
+`ghcr.io/neozhu/melotts-speech-service:latest`, updating it after verification.
+No version tag is required. A successful workflow emits the immutable digest and uploads
 `cpu-inference-results-<commit>` containing test results, logs and publication refs.
 
 ## Manual actions and limitations
@@ -79,8 +73,7 @@ the SHA tag. A successful workflow emits the actual immutable digest and uploads
 2. Validate 6-GiB memory fit and latency/RTF on an 8-vCPU host with 8 GiB available.
    Hosted runner performance is not evidence for that hardware profile. Set
    repository variable `TTS_RELEASE_RUNNER` for an appropriate Linux runner.
-3. Commit and push the implementation; enable Actions/package write permissions
-   and release-tag protection. Push a fresh stable SemVer tag or dispatch the
+3. Enable Actions/package write permissions. Push to `main` or manually dispatch the
    workflow. A successful publish is still required to satisfy release completion.
 4. Make the first GHCR package public if anonymous pulls are desired; deploy the
    verified digest from the workflow summary. Keep prior digests for rollback.
@@ -90,6 +83,5 @@ The older upstream frontend dependency set and PyTorch checkpoint compatibility
 must pass real-image tests. Eager unused-language tokenizer imports add downloads.
 Native inference cannot be forcibly cancelled; client timeout retains its occupied
 slot until completion. Debian system packages and NLTK dictionary downloads are
-resolved at build time despite pinned Python/source/model versions. Exact SemVer
-and SHA tags are protected by a pre-publication check; external concurrent
-publishers still require repository/registry operational controls.
+resolved at build time despite pinned Python/source/model versions. The `latest`
+tag moves on each successful publish; retain verified digests for rollback.

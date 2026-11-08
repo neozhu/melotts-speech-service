@@ -1,7 +1,7 @@
 name: Verify and publish CPU image
 on:
   push:
-    tags: ['v*.*.*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: '3.10'
       - id: meta
-        name: Validate release and generate image tags
+        name: Generate latest image tag
         run: python scripts/release_metadata.py
       - name: Install verification tools
         run: |
@@ -47,7 +47,7 @@ jobs:
           context: .
           platforms: linux/amd64
           outputs: type=oci,dest=${{ runner.temp }}/melotts.oci.tar
-          tags: ${{ steps.meta.outputs.image }}:sha-${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -72,37 +72,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Refuse immutable tag overwrites
-        env:
-          IMAGE: ${{ steps.meta.outputs.image }}
-          IMMUTABLE_TAGS: ${{ steps.meta.outputs.immutable_tags }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/check_registry_tags.py
       - name: Publish the exact verified OCI artifact and check its digest
         id: publish
         env:
           ARCHIVE: ${{ runner.temp }}/melotts.oci.tar
-          TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_TAG: ${{ steps.meta.outputs.tag }}
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          first=true
-          while IFS= read -r tag; do
-            skopeo copy --all --preserve-digests --authfile "$HOME/.docker/config.json" \
-              "oci-archive:$ARCHIVE" "docker://$tag"
-            actual="sha256:$(skopeo inspect --raw --authfile "$HOME/.docker/config.json" "docker://$tag" | sha256sum | cut -d ' ' -f 1)"
-            test "$actual" = "$EXPECTED_DIGEST"
-            if "$first"; then
-              echo "digest=$actual" >> "$GITHUB_OUTPUT"
-              first=false
-            fi
-            printf '%s@%s\n' "${tag%:*}" "$actual" >> smoke-results/published-images.txt
-          done <<< "$TAGS"
+          skopeo copy --all --preserve-digests --authfile "$HOME/.docker/config.json" \
+            "oci-archive:$ARCHIVE" "docker://$IMAGE_TAG"
+          actual="sha256:$(skopeo inspect --raw --authfile "$HOME/.docker/config.json" "docker://$IMAGE_TAG" | sha256sum | cut -d ' ' -f 1)"
+          test "$actual" = "$EXPECTED_DIGEST"
+          echo "digest=$actual" >> "$GITHUB_OUTPUT"
+          printf '%s@%s\n' "${IMAGE_TAG%:*}" "$actual" >> smoke-results/published-images.txt
           {
             echo 'Verified CPU image published'
             echo '```'
-            printf '%s\n' "$TAGS"
+            printf '%s\n' "$IMAGE_TAG"
             echo "$EXPECTED_DIGEST"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
